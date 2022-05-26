@@ -2,19 +2,36 @@ import fastaparser
 import regex
 import constants
 import os
-import matplotlib.pyplot as plt
 from tqdm import tqdm
 import grequests
 from utils import uniprot_from_fasta
 from collections import Counter
 
+# ignore matplotlib deprecation warnings
+import warnings
+warnings.filterwarnings('ignore', category=DeprecationWarning)
+import matplotlib.pyplot as plt
+
 class FastaParser:
   def __init__(self, filepath):
+    '''
+    Initializes a FastaParser object.
+    The FastaParser class is used to parse a FASTA file containing multiple sequences,
+    and determine which of those sequences meet the constraints for a prohormone.
+    
+    Parameters:
+      filepath (str): The path to the FASTA file to be parsed.
+    '''
+
+    # initialize member variables
     self.sequences = self.matches = []
     self.cleavage_spacing = constants.MIN_CLEAVAGE_SPACING
     self.num_cleavage_sites = constants.MIN_NUM_CLEAVAGE_SITES
+
+    # custom regex for matching cleavage sites with the correct spacing
     self.prohormone_regex = rf'(?:(?<=.{{{constants.SIGNAL_PEPTIDE_LENGTH}}})(?:(?<!K|R)(?:KK|KR|RR|RK)(?=[^RKILPVH]|(?<=KR)H|$))(?=(?:(?!(?R)).){{{self.cleavage_spacing},}}|$))'
 
+    # open the FASTA file, read the sequences, and select matches based on the current criteria
     try:
       with open(filepath, 'r') as fasta_file:
         print('Reading FASTA file...')
@@ -25,12 +42,22 @@ class FastaParser:
 
   @property
   def cleavage_spacing(self):
+    '''
+    Returns the spacing between cleavage sites.
+    '''
     return self._cleavage_spacing
 
   @cleavage_spacing.setter
   def cleavage_spacing(self, spacing):
+    '''
+    Sets the minimum cleavage spacing, under the condition that it is greater than the global MIN_CLEAVAGE_SPACING.
+    
+    Parameters:
+      spacing (int): The new minimum cleavage spacing.
+    '''
     self._cleavage_spacing = constants.MIN_CLEAVAGE_SPACING if spacing < constants.MIN_CLEAVAGE_SPACING else spacing
-    # recompile regex
+
+    # recompile regex  and update matches so that it corresponds with the new spacing
     self.prohormone_regex = rf'(?:(?<=.{{{constants.SIGNAL_PEPTIDE_LENGTH}}})(?:(?<!K|R)(?:KK|KR|RR|RK)(?=[^RKILPVH]|(?<=KR)H|$))(?=(?:(?!(?R)).){{{self.cleavage_spacing},}}|$))'
     if self.sequences:
       print('Updating matches...')
@@ -39,17 +66,37 @@ class FastaParser:
 
   @property
   def num_cleavage_sites(self):
+    '''
+    Returns the number of cleavage sites.
+    '''
     return self._num_cleavage_sites
 
   @num_cleavage_sites.setter
   def num_cleavage_sites(self, num_cleavage_sites):
+    '''
+    Sets the number of cleavage sites, under the condition that it is greater than the global MIN_NUM_CLEAVAGE_SITES.
+
+    Parameters:
+      num_cleavage_sites (int): The new minimum number of cleavage sites.
+    '''
     self._num_cleavage_sites = constants.MIN_NUM_CLEAVAGE_SITES if num_cleavage_sites < constants.MIN_NUM_CLEAVAGE_SITES else num_cleavage_sites
+    
+    # reset the matches to correspond with the new number of cleavage sites
     self.set_matches()
 
   def get_cleavage_sites(self, sequence):
+    '''
+    Returns a list of locations of cleavage sites in the sequence.
+
+    Parameters:
+      sequence (str): The sequence to be searched for cleavage sites.
+    '''
     return list(regex.finditer(self.prohormone_regex, sequence.sequence_as_string()))
 
   def set_matches(self):
+    '''
+    Sets the matches attribute to the list of sequences that have the specified number of cleavage sites and the right spacing between them.
+    '''
     self.matches = []
     if self.sequences:
       print(f'Finding matches with at least {self.num_cleavage_sites} cleavage sites separated by at least {self.cleavage_spacing} amino acids...')
@@ -61,9 +108,16 @@ class FastaParser:
 
   @property
   def num_matches(self):
+    '''
+    Returns the number of sequences in the FASTA file that are prohormones.
+    '''
     return len(self.matches)
 
   def graph_cleavage_density(self):
+    '''
+    Creates a scatterplot of the number of cleavage sites in each sequence vs. the length of the sequence.
+    Prohormones with a large number of cleavage sites and a shorter sequence length are typically desired.
+    '''
     x, y = zip(*[(len(sequence), len(match)) for sequence, match in tqdm(self.matches)])
     plt.scatter(x, y)
     plt.title('Cleavage Density of Identified Prohormones')
@@ -72,22 +126,34 @@ class FastaParser:
     plt.show()
 
   def tissue_specificity(self, show_graph=False):
-    print('Fetching tissue expression annotations...')
-    urls = [f'http://www.proteinatlas.org/api/search_download.php?search={uniprot_from_fasta(sequence)}&format=json&columns=g,up,rnats,rnatsm&compress=no' for sequence, match in self.sequences]
-    responses = grequests.map((grequests.get(url) for url in urls))
+    '''
+    Returns a dictionary of tissue specificity values for each sequence.
 
+    Parameters:
+      show_graph (bool): Whether or not to show a graph of the tissue specificity values.
+    '''
+
+    # retrieve tissue expression data The Human Protein Atlas
+    # API specification can be found at https://www.proteinatlas.org/about/help/dataaccess
+    print('Fetching tissue expression annotations...')
+    urls = [f'http://www.proteinatlas.org/api/search_download.php?search={uniprot_from_fasta(sequence)}&format=json&columns=g,up,rnats,rnatsm&compress=no' for sequence, _ in self.sequences]
+    responses = grequests.map((grequests.get(url) for url in urls)) # fetch the data in parallel
+
+    # for each tissue, calculate the number of sequences in the FASTA file that are expressed in that tissue
     print('Analyzing responses...')
     tissue_expression = Counter()
     for response in responses:
       if response and response.json():
-        expression = response.json()[0]['RNA tissue specific NX']
+        expression = response.json()[0]['RNA tissue specific nTPM']
         if expression:
           tissue_expression.update(list(expression.keys()))
         else:
+          # "wide": the sequence affects a large number of tissues
           tissue_expression.update(['wide'])
       else:
         tissue_expression.update(['no HPA annotation'])
-
+    
+    # display a bar graph showing the number of sequences expressed in each tissue
     if show_graph:
       # sort from highest to lowest
       tissues, frequencies = zip(*sorted(tissue_expression.items(), key = lambda x: -x[1]))
@@ -101,9 +167,18 @@ class FastaParser:
     return tissue_expression
 
   def write_fasta(self, filename):
+    '''
+    Writes the matches to a FASTA file.
+    
+    Parameters:
+      filename (str): The name of the file to be written.
+    '''
+
+    # create directory if it doesn't exist
     if not os.path.isdir(constants.OUTPUT_FASTA_PATH):
       os.mkdir(constants.OUTPUT_FASTA_PATH)
     
+    # write the matches to the FASTA file in the output directory
     with open(f'{constants.OUTPUT_FASTA_PATH}{filename}', 'w') as fasta_file:
       writer = fastaparser.Writer(fasta_file)
       print('Writing matching FASTA sequences to file...')
