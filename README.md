@@ -1,6 +1,6 @@
 # pro-hormone-predictor
 
-This program predicts whether a secreted gene has prohormone activity based on the number of trypsin cleavage sites it contains.
+This program predicts whether a secreted gene has prohormone activity based on the number of cleavage sites it contains.
 
 ## Finding Secreted Genes
 
