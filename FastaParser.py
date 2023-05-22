@@ -39,6 +39,9 @@ class FastaParser:
         self.set_matches()
     except FileNotFoundError:
       print('The specified file cannot be read.')
+    
+    # writes peptide sequences from proteins to "output.fasta" file
+    self.write_fasta("output.fasta")
 
   @property
   def cleavage_spacing(self):
@@ -165,7 +168,7 @@ class FastaParser:
       plt.ylabel('Number of Genes')
       plt.show()
     return tissue_expression
-
+    
   def write_fasta(self, filename):
     '''
     Writes the matches to a FASTA file.
@@ -183,4 +186,36 @@ class FastaParser:
       writer = fastaparser.Writer(fasta_file)
       print('Writing matching FASTA sequences to file...')
       for match in tqdm(self.matches):
-        writer.writefasta(match)
+        peptides = self.split_fasta_sequence(match)
+        for p in peptides:
+          writer.writefasta(p)
+  
+  def split_fasta_sequence(fasta_sequence_obj, regex_matches):
+    
+    '''
+    Splits fasta sequences up based on regex matches.
+    
+    Parameters:
+      fasta_sequence: str, regex_matches: List[regex.Match]
+    '''
+    fasta_sequence = fasta_sequence_obj.sequences
+    splits = []
+    start_index = 0
+    i = 0
+    if regex_matches:
+      for match in regex_matches[1]:
+        if i==0:
+          split_sequence = regex_matches[0][0:match.span()[0]]
+          splits.append(split_sequence)
+          start_index=match.span()[1]
+          i=1
+        else:
+          split_sequence = regex_matches[0][start_index:match.span()[0]]
+          splits.append(split_sequence)
+          start_index=match.span()[1]
+          if start_index < len(regex_matches[0]):
+            split_sequence = regex_matches[0][start_index:]
+            splits.append(split_sequence)  
+      else:
+        splits.append(regex_matches[0])
+    return splits

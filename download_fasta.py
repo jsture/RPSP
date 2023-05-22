@@ -10,4 +10,3 @@ response = requests.get(url)
 # save the results to a FASTA file
 with open(constants.INPUT_FASTA_PATH, 'w') as f:
   f.write(response.text)
-  
