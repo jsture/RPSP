@@ -1,4 +1,4 @@
-# pro-hormone-predictor
+# peptide-predictor
 
 This program predicts whether a secreted gene has prohormone activity based on the number of cleavage sites it contains.
 
