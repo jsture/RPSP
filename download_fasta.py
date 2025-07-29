@@ -4,7 +4,7 @@ import requests
 import constants
 
 # make the request to the UniProt API
-url = 'https://rest.uniprot.org/uniprotkb/search?query=(cc_scl_term:SL-0243)%20AND%20(reviewed:true)%20AND%20Human&format=fasta&size=500'
+url = 'https://rest.uniprot.org/uniprotkb/stream?format=fasta&query=%28%28cc_scl_term%3ASL-0243%29%29+AND+%28reviewed%3Atrue%29+AND+%28model_organism%3A9606%29'
 response = requests.get(url)
 
 # save the results to a FASTA file
